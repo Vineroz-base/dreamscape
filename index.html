@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
 <title>Dreamscape Roguelite</title>
 <style>
   :root {
@@ -11,45 +11,44 @@
     --accent: #47e9ff;
     --accent2: #a88cff;
     --danger: #ff4d6d;
-    --glow: 0 0 12px rgba(71,233,255,0.6), 0 0 24px rgba(71,233,255,0.4);
-    --glow2: 0 0 12px rgba(168,140,255,0.6), 0 0 24px rgba(168,140,255,0.4);
-    --glowDanger: 0 0 12px rgba(255,77,109,0.6), 0 0 24px rgba(255,77,109,0.4);
+    --panel: #111;
+    --stroke: #222;
   }
   html, body {
     height: 100%;
+    margin: 0;
     background: var(--bg);
     color: var(--fg);
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
   }
   body {
-    margin: 0;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
   }
   #wrap {
+    width: 100%;
+    max-width: 420px;
+    padding: 12px;
     display: flex;
     flex-direction: column;
     align-items: center;
     gap: 12px;
-    width: 100%;
-    max-width: 420px;
-    padding: 12px;
   }
   #title {
     font-weight: 600;
-    letter-spacing: 0.5px;
-    color: var(--fg);
+    letter-spacing: 0.4px;
     text-align: center;
-    text-shadow: var(--glow2);
+    color: var(--fg);
   }
   #game {
     width: 100%;
     aspect-ratio: 360 / 640;
     background: #000;
     border-radius: 14px;
-    box-shadow: 0 0 0 2px #232323, 0 6px 24px rgba(0,0,0,0.6), var(--glow);
+    box-shadow: 0 0 0 1px var(--stroke), 0 12px 32px rgba(0,0,0,0.6);
     touch-action: none;
+    display: block;
   }
   #hud {
     width: 100%;
@@ -64,17 +63,20 @@
     justify-content: center;
     padding: 10px 14px;
     border-radius: 999px;
-    background: #111;
-    box-shadow: 0 0 0 1px #222, 0 6px 18px rgba(0,0,0,0.5);
+    background: var(--panel);
+    box-shadow: 0 0 0 1px var(--stroke), 0 8px 24px rgba(0,0,0,0.5);
     min-width: 120px;
   }
-  .stat {
-    font-weight: 600;
-    letter-spacing: 0.3px;
-  }
+  .stat { font-weight: 600; letter-spacing: 0.3px; }
   .accent { color: var(--accent) }
   .accent2 { color: var(--accent2) }
   .danger { color: var(--danger) }
+  #buttons {
+    width: 100%;
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+  }
   button {
     appearance: none;
     border: none;
@@ -84,8 +86,8 @@
     color: var(--fg);
     font-weight: 600;
     letter-spacing: 0.3px;
-    box-shadow: 0 0 0 1px #222, var(--glow2);
-    transition: transform 120ms ease, box-shadow 120ms ease, background 120ms ease;
+    box-shadow: 0 0 0 1px var(--stroke), 0 8px 24px rgba(0,0,0,0.5);
+    transition: transform 120ms ease;
   }
   button:active { transform: scale(0.98) }
   #hint {
@@ -101,94 +103,86 @@
     <canvas id="game" width="360" height="640"></canvas>
     <div id="hud">
       <div class="pill"><span class="stat danger">❤ <span id="hp">100</span></span></div>
-      <button id="reset">Reset</button>
       <div class="pill"><span class="stat accent2">✦ <span id="totalShards">0</span></span></div>
     </div>
-    <div id="hint">Swipe to move. Tap to dash. Collect glowing shards.</div>
+    <div id="buttons">
+      <button id="startBtn">Start run</button>
+      <button id="newRunBtn">New run</button>
+      <button id="resetBtn">Reset</button>
+    </div>
+    <div id="hint">Swipe to move. Tap to dash. Collect glowing shards. Avoid hazards.</div>
   </div>
 
 <script>
-  const W = 360, H = 640
+  // Canvas and DPI scaling
   const canvas = document.getElementById('game')
   const ctx = canvas.getContext('2d', { alpha: false })
-  let scaleX = 1, scaleY = 1
-  function resize() {
+  const BASE_W = 360, BASE_H = 640
+  function fitCanvasToDPR() {
+    const dpr = Math.max(1, Math.floor(window.devicePixelRatio || 1))
     const rect = canvas.getBoundingClientRect()
-    scaleX = canvas.width / rect.width
-    scaleY = canvas.height / rect.height
+    canvas.width = Math.round(rect.width * dpr)
+    canvas.height = Math.round(rect.height * dpr)
+    ctx.setTransform(1,0,0,1,0,0)
+    ctx.scale(canvas.width / BASE_W, canvas.height / BASE_H) // uniform scale to logical size
   }
-  new ResizeObserver(resize).observe(canvas)
+  new ResizeObserver(fitCanvasToDPR).observe(canvas)
+  fitCanvasToDPR()
 
-  const storageKey = 'dreamscape_total_shards'
-  let totalShards = parseInt(localStorage.getItem(storageKey) || '0', 10)
-  const totalShardsEl = document.getElementById('totalShards')
-  totalShardsEl.textContent = totalShards
+  // Safe localStorage helpers
+  const STORAGE_KEY = 'dreamscape_total_shards'
+  function safeGet(key, fallback='0') {
+    try { return localStorage.getItem(key) ?? fallback } catch { return fallback }
+  }
+  function safeSet(key, value) {
+    try { localStorage.setItem(key, value) } catch {}
+  }
+  function safeRemove(key) {
+    try { localStorage.removeItem(key) } catch {}
+  }
 
+  // UI refs
   const hpEl = document.getElementById('hp')
-  document.getElementById('reset').addEventListener('click', () => {
-    totalShards = 0
-    localStorage.setItem(storageKey, '0')
-    totalShardsEl.textContent = totalShards
-  })
+  const totalEl = document.getElementById('totalShards')
+  const startBtn = document.getElementById('startBtn')
+  const newRunBtn = document.getElementById('newRunBtn')
+  const resetBtn = document.getElementById('resetBtn')
 
-  const player = {
-    x: W/2, y: H*0.7, w: 18, h: 18,
-    vx: 0, vy: 0, speed: 2.2, dash: 5.0, hp: 100
-  }
-
+  // Game state
+  const W = BASE_W, H = BASE_H
+  const player = { x: W/2-9, y: H*0.7-9, w: 18, h: 18, vx: 0, vy: 0, speed: 2.4, dash: 5.2, hp: 100, lastHitAt: 0, hitCooldownMs: 600 }
   let shards = []
-  let particles = []
   let obstacles = []
-  let lastTime = performance.now()
-  let touchStart = null
-  let dashTarget = null
+  let particles = []
+  let runActive = false
+  let totalShards = parseInt(safeGet(STORAGE_KEY, '0'), 10) || 0
+  totalEl.textContent = totalShards
 
-  function rand(a,b){ return Math.random()*(b-a)+a }
-  function irand(a,b){ return Math.floor(rand(a,b)) }
-  function clamp(v, a, b){ return Math.max(a, Math.min(b, v)) }
+  // Utils
+  const clamp = (v,a,b)=>Math.max(a,Math.min(b,v))
+  const rand = (a,b)=>Math.random()*(b-a)+a
+  const irand = (a,b)=>Math.floor(rand(a,b))
+  const aabb = (ax,ay,aw,ah,bx,by,bw,bh)=>ax<bx+bw&&ax+aw>bx&&ay<by+bh&&ay+ah>by
 
-  function spawnShards(n=16) {
+  // Content spawn
+  function spawnShards(n=18) {
     shards = []
-    for (let i=0; i<n; i++) {
-      const r = rand(6, 9)
-      const x = rand(r+10, W - r - 10)
-      const y = rand(r+10, H - r - 80)
-      shards.push({
-        x, y, r,
-        hue: irand(180, 260),
-        pulse: rand(0, Math.PI*2)
-      })
+    for (let i=0;i<n;i++){
+      const r = rand(6,10)
+      shards.push({ x: rand(r+10, W-r-10), y: rand(r+10, H-90-r), r, hue: irand(180, 260), pulse: rand(0, Math.PI*2) })
     }
   }
-
-  function spawnObstacles(n=6) {
+  function spawnObstacles(n=7) {
     obstacles = []
     for (let i=0;i<n;i++){
-      const w = rand(18, 40), h = rand(8, 14)
-      const x = rand(10, W-10-w)
-      const y = rand(60, H-160)
-      const vx = rand(-0.6, 0.6)
-      obstacles.push({x,y,w,h,vx})
+      const w = rand(18, 36), h = rand(8, 14)
+      obstacles.push({ x: rand(10, W-10-w), y: rand(60, H-160), w, h, vx: rand(-0.7, 0.7) })
     }
   }
 
-  function aabb(ax,ay,aw,ah,bx,by,bw,bh){
-    return ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by
-  }
-  function circleRect(cx,cy,cr,rx,ry,rw,rh){
-    const nx = clamp(cx, rx, rx+rw)
-    const ny = clamp(cy, ry, ry+rh)
-    const dx = cx - nx, dy = cy - ny
-    return dx*dx + dy*dy <= cr*cr
-  }
-
-  function addParticle(x,y,color){
-    particles.push({x,y,life: 1, color})
-  }
-  function updateParticles(dt){
-    for (let p of particles) p.life -= dt*1.8
-    particles = particles.filter(p=>p.life>0)
-  }
+  // Particles
+  function addParticle(x,y,color){ particles.push({x,y,life:1,color}) }
+  function updateParticles(dt){ for (let p of particles) p.life -= dt*1.8; particles = particles.filter(p=>p.life>0) }
   function drawParticles(){
     for (let p of particles){
       const a = Math.max(0, Math.min(1, p.life))
@@ -197,11 +191,13 @@
     }
   }
 
+  // Drawing
   function drawBackground(t){
+    ctx.save()
     ctx.fillStyle = '#000'
     ctx.fillRect(0,0,W,H)
     const g = ctx.createLinearGradient(0,0,0,H)
-    g.addColorStop(0, 'rgba(15,15,25,0.4)')
+    g.addColorStop(0, 'rgba(15,15,25,0.35)')
     g.addColorStop(1, 'rgba(0,0,0,0.2)')
     ctx.fillStyle = g
     ctx.fillRect(0,0,W,H)
@@ -212,13 +208,13 @@
       const py = (i*59 + t*0.05)%H
       ctx.fillRect(px, py, 2, 2)
     }
-    ctx.globalCompositeOperation = 'source-over'
+    ctx.restore() // restores composite op and styles
   }
-
-  function drawShards(t){
+  function drawShards(){
     for (let s of shards){
       s.pulse += 0.03
       const k = 0.5 + Math.sin(s.pulse)*0.25
+      ctx.save()
       ctx.beginPath()
       ctx.arc(s.x, s.y, s.r*(0.9+k*0.2), 0, Math.PI*2)
       ctx.closePath()
@@ -227,139 +223,107 @@
       ctx.beginPath()
       ctx.arc(s.x, s.y, s.r, 0, Math.PI*2)
       ctx.closePath()
-      ctx.fillStyle = `hsl(${s.hue} 80% 60% / 0.85)`
+      ctx.fillStyle = `hsl(${s.hue} 80% 60% / 0.90)`
       ctx.shadowColor = `hsl(${s.hue} 90% 65%)`
       ctx.shadowBlur = 12
       ctx.fill()
-      ctx.shadowBlur = 0
+      ctx.restore()
     }
   }
-
   function drawObstacles(){
     for (let o of obstacles){
+      ctx.save()
       ctx.fillStyle = 'rgba(255,77,109,0.10)'
       ctx.fillRect(o.x-2, o.y-2, o.w+4, o.h+4)
-      ctx.fillStyle = 'rgba(255,77,109,0.85)'
+      ctx.fillStyle = 'rgba(255,77,109,0.90)'
       ctx.fillRect(o.x, o.y, o.w, o.h)
+      ctx.restore()
     }
   }
-
   function drawPlayer(){
-    ctx.fillStyle = 'rgba(71,233,255,0.15)'
+    ctx.save()
+    ctx.fillStyle = 'rgba(71,233,255,0.16)'
     ctx.fillRect(player.x-4, player.y-4, player.w+8, player.h+8)
-    ctx.fillStyle = 'rgba(71,233,255,0.95)'
+    ctx.fillStyle = 'rgba(71,233,255,0.98)'
     ctx.fillRect(player.x, player.y, player.w, player.h)
+    ctx.restore()
   }
 
+  // Logic
   function collectShard(i){
     const s = shards[i]
     addParticle(s.x, s.y, [120,220,255])
     shards.splice(i,1)
     totalShards++
-    localStorage.setItem(storageKey, String(totalShards))
-    totalShardsEl.textContent = totalShards
+    totalEl.textContent = totalShards
+    safeSet(STORAGE_KEY, String(totalShards))
   }
 
-  function updateObstacles(dt){
+  function updateObstacles(dt, now){
     for (let o of obstacles){
       o.x += o.vx
       if (o.x < 10 || o.x+o.w > W-10) o.vx *= -1
       if (aabb(player.x,player.y,player.w,player.h,o.x,o.y,o.w,o.h)){
-        player.hp = Math.max(0, player.hp - 10*dt)
-        hpEl.textContent = Math.round(player.hp)
-        addParticle(player.x+player.w/2, player.y+player.h/2, [255,64,96])
+        if (now - player.lastHitAt > player.hitCooldownMs) {
+          player.hp = Math.max(0, player.hp - 10)
+          player.lastHitAt = now
+          hpEl.textContent = player.hp
+          addParticle(player.x+player.w/2, player.y+player.h/2, [255,64,96])
+        }
       }
     }
   }
 
   function updatePlayer(dt){
+    // dash moves faster towards target then slows via friction
     if (dashTarget){
-      const dx = dashTarget.x - (player.x + player.w/2)
-      const dy = dashTarget.y - (player.y + player.h/2)
+      const cx = player.x + player.w/2, cy = player.y + player.h/2
+      const dx = dashTarget.x - cx, dy = dashTarget.y - cy
       const d = Math.hypot(dx,dy)
       if (d > 2){
         player.vx = (dx/d) * player.dash
         player.vy = (dy/d) * player.dash
       } else {
         dashTarget = null
-        player.vx = 0
-        player.vy = 0
       }
     }
     player.x += player.vx
     player.y += player.vy
     player.x = clamp(player.x, 6, W - player.w - 6)
-    player.y = clamp(player.y, 50, H - player.h - 80)
+    player.y = clamp(player.y, 50, H - player.h - 90)
     player.vx *= 0.92
     player.vy *= 0.92
   }
 
   function updateShards(){
     for (let i=shards.length-1;i>=0;i--){
-      if (circleRect(shards[i].x, shards[i].y, shards[i].r, player.x, player.y, player.w, player.h)){
-        collectShard(i)
-      }
+      const s = shards[i]
+      const hit = (Math.abs(s.x - (player.x + player.w/2)) < s.r + player.w/2) &&
+                  (Math.abs(s.y - (player.y + player.h/2)) < s.r + player.h/2)
+      if (hit) collectShard(i)
     }
   }
 
-  function step(t){
-    const now = performance.now()
-    const dt = Math.min(0.033, (now - lastTime)/1000)
-    lastTime = now
-    updateParticles(dt)
-    updateObstacles(dt)
-    updatePlayer(dt)
-    updateShards()
-    drawBackground(t)
-    drawObstacles()
-    drawShards(t)
-    drawPlayer()
-    requestAnimationFrame(step)
-  }
+  // Input (unified)
+  let inputStart = null
+  let dashTarget = null
 
-  function startRun(){
-    player.x = W/2 - player.w/2
-    player.y = H*0.7 - player.h/2
-    player.vx = 0
-    player.vy = 0
-    player.hp = 100
-    hpEl.textContent = 100
-    spawnShards(18)
-    spawnObstacles(7)
-    lastTime = performance.now()
-  }
-
-  function canvasPointFromEvent(e){
+  function canvasPointFromClient(clientX, clientY){
     const rect = canvas.getBoundingClientRect()
-    let clientX, clientY
-    if (e.touches && e.touches[0]){
-      clientX = e.touches[0].clientX
-      clientY = e.touches[0].clientY
-    } else {
-      clientX = e.clientX
-      clientY = e.clientY
-    }
-    const x = (clientX - rect.left) * scaleX
-    const y = (clientY - rect.top) * scaleY
-    return { x, y }
+    const sx = BASE_W / rect.width
+    const sy = BASE_H / rect.height
+    return { x: (clientX - rect.left) * sx, y: (clientY - rect.top) * sy }
   }
-
-  canvas.addEventListener('touchstart', e=>{
-    e.preventDefault()
-    touchStart = { point: canvasPointFromEvent(e), time: performance.now() }
-  }, { passive: false })
-
-  canvas.addEventListener('touchend', e=>{
-    e.preventDefault()
-    const endPoint = touchStart ? touchStart.point : null
-    const now = performance.now()
-    if (!endPoint) return
-    const dt = now - touchStart.time
-    const startP = endPoint
-    const endP = canvasPointFromEvent(e.changedTouches[0] || e)
-    const dx = endP.x - startP.x
-    const dy = endP.y - startP.y
-    const dist = Math.hypot(dx,dy)
+  function beginInput(clientX, clientY){
+    inputStart = { p: canvasPointFromClient(clientX, clientY), t: performance.now() }
+  }
+  function endInput(clientX, clientY){
+    if (!inputStart) return
+    const endP = canvasPointFromClient(clientX, clientY)
+    const dx = endP.x - inputStart.p.x
+    const dy = endP.y - inputStart.p.y
+    const dist = Math.hypot(dx, dy)
+    const dt = performance.now() - inputStart.t
     if (dist < 12 || dt < 180){
       dashTarget = { x: endP.x, y: endP.y }
     } else {
@@ -368,31 +332,82 @@
       player.vy = (dy/d) * player.speed * 12/16
       dashTarget = null
     }
-    touchStart = null
-  }, { passive: false })
+    inputStart = null
+  }
 
-  canvas.addEventListener('mousedown', e=>{
-    const p = canvasPointFromEvent(e)
-    touchStart = { point: p, time: performance.now() }
-  })
-  canvas.addEventListener('mouseup', e=>{
-    const p = canvasPointFromEvent(e)
-    const dt = performance.now() - touchStart.time
-    const dx = p.x - touchStart.point.x
-    const dy = p.y - touchStart.point.y
-    const dist = Math.hypot(dx,dy)
-    if (dist < 10 || dt < 160){
-      dashTarget = { x: p.x, y: p.y }
-    } else {
-      const d = Math.max(1, dist)
-      player.vx = (dx/d) * player.speed * 12/16
-      player.vy = (dy/d) * player.speed * 12/16
-      dashTarget = null
+  canvas.addEventListener('touchstart', e=>{
+    if (e.touches && e.touches.length>0){
+      const t = e.touches[0]
+      beginInput(t.clientX, t.clientY)
     }
-    touchStart = null
-  })
+  }, { passive: true })
+  canvas.addEventListener('touchend', e=>{
+    const ct = e.changedTouches
+    if (ct && ct.length>0){
+      const t = ct[0]
+      endInput(t.clientX, t.clientY)
+    }
+  }, { passive: true })
+  canvas.addEventListener('mousedown', e=>beginInput(e.clientX, e.clientY))
+  canvas.addEventListener('mouseup', e=>endInput(e.clientX, e.clientY))
 
-  startRun()
+  // Loop
+  let lastTime = performance.now()
+  function step(now){
+    const dt = Math.min(0.1, (now - lastTime)/1000)
+    lastTime = now
+    if (!runActive){
+      drawBackground(now)
+      drawObstacles()
+      drawShards()
+      drawPlayer()
+      drawParticles()
+      requestAnimationFrame(step)
+      return
+    }
+    updateParticles(dt)
+    updateObstacles(dt, now)
+    updatePlayer(dt)
+    updateShards()
+    drawBackground(now)
+    drawObstacles()
+    drawShards()
+    drawPlayer()
+    drawParticles()
+    if (player.hp <= 0) runActive = false
+    requestAnimationFrame(step)
+  }
+
+  // Controls
+  function startRun(){
+    player.x = W/2 - player.w/2
+    player.y = H*0.7 - player.h/2
+    player.vx = 0
+    player.vy = 0
+    dashTarget = null
+    spawnShards(18)
+    spawnObstacles(7)
+    runActive = true
+    player.hp = 100
+    player.lastHitAt = 0
+    hpEl.textContent = player.hp
+  }
+  function newRun(){
+    player.hp = 100
+    player.lastHitAt = 0
+    hpEl.textContent = player.hp
+    startRun()
+  }
+  function resetProgress(){
+    safeRemove(STORAGE_KEY)
+    totalShards = 0
+    totalEl.textContent = totalShards
+  }
+
+  startBtn.addEventListener('click', startRun)
+  newRunBtn.addEventListener('click', newRun)
+  resetBtn.addEventListener('click', resetProgress)
+
   requestAnimationFrame(step)
 </script>
 </body>
